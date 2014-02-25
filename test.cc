@@ -4,8 +4,6 @@
 #include <vector>
 #include <iostream>
 
-#include "glInfo.h"
-
 using namespace std;
 
 // program and shader handles
