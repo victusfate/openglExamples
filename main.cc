@@ -141,22 +141,12 @@ int main(int argc, char *argv[])
         }
     );
 
-    // string fragment_source = GLSL330(
-    //     in vec2 VertTexcoord;
-        
-    //     uniform sampler2D Diffuse;
-    //     void main() {
-    //        gl_FragColor = texture2D(Diffuse, VertTexcoord);
-    //     }
-    // );
-
     string fragment_source = GLSL330(
         in vec2 VertTexCoord;
         layout(location = 0) out vec4 outColor;
         uniform sampler2D Diffuse;
         void main() {
             outColor = texture(Diffuse, VertTexCoord); 
-            // outColor = vec4(1.0,0,0,1.0);
         }
     );    
 
