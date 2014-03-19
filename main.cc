@@ -149,12 +149,12 @@ int main(int argc, char *argv[])
     // );
 
     string fragment_source = GLSL330(
-        in vec2 VertTexcoord;
+        in vec2 VertTexCoord;
         layout(location = 0) out vec4 outColor;
         uniform sampler2D Diffuse;
         void main() {
-            // outColor = texture2D(Diffuse, VertTexcoord); 
-            outColor = vec4(1.0,0,0,1.0);
+            outColor = texture(Diffuse, VertTexCoord); 
+            // outColor = vec4(1.0,0,0,1.0);
         }
     );    
 
@@ -244,7 +244,7 @@ int main(int argc, char *argv[])
        1.0f,-1.0f, 0.0f,
       -1.0f,-1.0f, 0.0f
     }; // 2 triangles to cover a rectangle
-    
+
     // fill with data
     glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*6*3, vertexData, GL_STATIC_DRAW);
 
