@@ -134,7 +134,9 @@ int main(int argc, char *argv[])
         layout(location = 0) in vec4 vposition;
         out vec2 VertTexCoord;
         void main() {
-           VertTexCoord = vposition.xy;
+           VertTexCoord.x = 0.5 * ( vposition.x + 1.0);
+           VertTexCoord.y = 0.5 * (-vposition.y + 1.0);
+
            gl_Position = vposition;
         }
     );
