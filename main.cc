@@ -5,8 +5,29 @@
 #include <iostream>
 #include <vector>
 
+#include <Magick++.h>
+
 using namespace std;
 
+#define GLSL330(src) "#version 330 core\n" #src
+
+void gl_GenTexture(GLuint &id, int width, int height,void *ptr = NULL)
+{
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id); 
+  
+    // GL_UNSIGNED_BYTE specifier is apparently ignored..
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, ptr);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glFlush();
+    glFinish();
+}
 
 // glfw3: http://www.glfw.org/
 
@@ -44,9 +65,22 @@ static void error_callback(int error, const char *msg) {
     cerr << "GLWT error " << error << ": " << msg << endl;
 }
 
-int main() {
-    int width = 640;
-    int height = 480;
+int main(int argc, char *argv[]) 
+{
+    if (argc != 2) {
+        cout << "usage: " << argv[0] << " image " << endl;
+        exit(1);
+    }
+
+    Magick::InitializeMagick(NULL);
+
+    Magick::Image image(argv[1]);
+    int width = image.baseColumns();
+    int height = image.baseRows();
+
+    vector<unsigned char> imageData(width*height*4);
+    image.write(0,0,width,height,"BGRA",Magick::CharPixel,(void *)&(imageData[0]));
+    cout << "got here" << endl;
 
     glfwSetErrorCallback(error_callback);
 
@@ -65,7 +99,7 @@ int main() {
 
     // select opengl version
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
@@ -83,33 +117,52 @@ int main() {
     glewExperimental = GL_TRUE;
     glewInit();
 
+    // safe to make gl calls
+
     // get version info
     cout << "Renderer: " << glGetString(GL_RENDERER) << endl;
     cout << "OpenGL version: " << glGetString(GL_VERSION) << endl;
     cout << "shader lang: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
 
 
-    // shader source code
-    string vertex_source =
-        "#version 330\n"
-        "layout(location = 0) in vec4 vposition;\n"
-        "layout(location = 1) in vec4 vcolor;\n"
-        "out vec4 fcolor;\n"
-        "void main() {\n"
-        "   fcolor = vcolor;\n"
-        "   gl_Position = vposition;\n"
-        "}\n";
+    GLuint texID;
+    gl_GenTexture(texID,width,height,(void *)&(imageData[0]));
 
-    string fragment_source =
-        "#version 330\n"
-        "in vec4 fcolor;\n"
-        "layout(location = 0) out vec4 FragColor;\n"
-        "void main() {\n"
-        "   FragColor = fcolor;\n"
-        "}\n";
+
+    // shader source code
+    string vertex_source = GLSL330(
+        layout(location = 0) in vec4 vposition;
+        out vec2 VertTexCoord;
+        void main() {
+           VertTexCoord = vposition.xy;
+           gl_Position = vposition;
+        }
+    );
+
+    // string fragment_source = GLSL330(
+    //     in vec2 VertTexcoord;
+        
+    //     uniform sampler2D Diffuse;
+    //     void main() {
+    //        gl_FragColor = texture2D(Diffuse, VertTexcoord);
+    //     }
+    // );
+
+    string fragment_source = GLSL330(
+        in vec2 VertTexcoord;
+        layout(location = 0) out vec4 outColor;
+        uniform sampler2D Diffuse;
+        void main() {
+            // outColor = texture2D(Diffuse, VertTexcoord); 
+            outColor = vec4(1.0,0,0,1.0);
+        }
+    );    
+
 
     // program and shader handles
-    GLuint shader_program, vertex_shader, fragment_shader;
+    GLuint shader_program, vertex_shader, fragment_shader, UniformDiffuse;
+
+
 
     // we need these to properly pass the strings
     const char *source;
@@ -126,6 +179,7 @@ int main() {
     GLint success = 0;
     glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);    
     if(success == GL_FALSE) {
+        cout << "vertex shader busted messelaneous" << endl;
         glfwDestroyWindow(window);
         glfwTerminate();
         return 1;
@@ -141,6 +195,7 @@ int main() {
     success = 0;
     glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);    
     if(success == GL_FALSE) {
+        cout << "fragment shader busted messelaneous" << endl;
         glfwDestroyWindow(window);
         glfwTerminate();
         return 1;
@@ -153,15 +208,20 @@ int main() {
     glAttachShader(shader_program, vertex_shader);
     glAttachShader(shader_program, fragment_shader);
 
+    glBindAttribLocation(shader_program, 0, "texCoord");
+    glBindFragDataLocation(shader_program, 0, "color");
+
     // link the program and check for errors
     glLinkProgram(shader_program);
 
     //Note the different functions here: glGetProgram* instead of glGetShader*.
     GLint isLinked = 0;
     glGetProgramiv(shader_program, GL_LINK_STATUS, (int *)&isLinked);
-    if(isLinked == GL_FALSE) {   
+    if(isLinked == GL_FALSE) { 
+        cout << "shader linking into program busted messelaneous" << endl; 
         return 1;
     }
+    UniformDiffuse = glGetUniformLocation(shader_program, "Diffuse");
 
     // vao and vbo handle
     GLuint vao, vbo;
@@ -176,24 +236,24 @@ int main() {
 
     // data for a fullscreen quad
     GLfloat vertexData[] = {
-    //  X     Y     Z           R     G     B
-       1.0f, 1.0f, 0.0f,       1.0f, 0.0f, 0.0f, // vertex 0
-      -1.0f, 1.0f, 0.0f,       0.0f, 1.0f, 0.0f, // vertex 1
-       1.0f,-1.0f, 0.0f,       0.0f, 0.0f, 1.0f, // vertex 2
-       1.0f,-1.0f, 0.0f,       0.0f, 0.0f, 1.0f, // vertex 3
-      -1.0f, 1.0f, 0.0f,       0.0f, 1.0f, 0.0f, // vertex 4
-      -1.0f,-1.0f, 0.0f,       1.0f, 0.0f, 0.0f, // vertex 5
-    }; // 6 vertices with 6 components (floats) each
-
+    //  X     Y     Z   
+      -1.0f,-1.0f, 0.0f,
+      -1.0f, 1.0f, 0.0f,
+       1.0f, 1.0f, 0.0f,
+       1.0f, 1.0f, 0.0f,
+       1.0f,-1.0f, 0.0f,
+      -1.0f,-1.0f, 0.0f
+    }; // 2 triangles to cover a rectangle
+    
     // fill with data
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*6*6, vertexData, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*6*3, vertexData, GL_STATIC_DRAW);
 
-    // set up generic attrib pointers
+    // set up generic attrib pointers, 2 triangles
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6*sizeof(GLfloat), (char*)0 + 0*sizeof(GLfloat));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(GLfloat), (char*)0 + 0*sizeof(GLfloat));
 
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6*sizeof(GLfloat), (char*)0 + 3*sizeof(GLfloat));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3*sizeof(GLfloat), (char*)0 + 3*sizeof(GLfloat));
 
     while(!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -204,6 +264,13 @@ int main() {
         // use the shader program
         glUseProgram(shader_program);
 
+        // bind the input texture
+        glEnable(GL_TEXTURE_2D); //Enable texture
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texID);
+        // set uniform sampler for texture input
+        glUniform1i(UniformDiffuse, 0);
+
         // bind the vao
         glBindVertexArray(vao);
 
@@ -213,8 +280,16 @@ int main() {
         // check for errors
         GLenum error = glGetError();
         if(error != GL_NO_ERROR) {
-            cout << "GL error!" << error << " string " << gluErrorString(error) << endl;
-            if (error != 1280) break; // skip invalid enumerant
+            static int first = 1;
+            if (first && error == 1280) {
+                cout << "GL error!" << error << " string " << gluErrorString(error) << endl;
+                first = 0;
+            }
+            
+            if (error != 1280) {
+                cout << "GL error!" << error << " string " << gluErrorString(error) << endl;
+                break; // skip invalid enumerant
+            }
         }
 
         // finally swap buffers
